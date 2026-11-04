@@ -1,0 +1,748 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubscriptionStatus {
+  NONE
+  ACTIVE
+}
+
+enum Language {
+  MR
+  HI
+  EN
+}
+
+enum Role {
+  RESIDENT
+  SOCIETY_ADMIN
+  VENDOR
+  SUPER_ADMIN
+}
+
+enum MembershipStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ConsentType {
+  TERMS
+  PRIVACY
+  PROMOTIONS
+}
+
+enum CategoryKind {
+  PRODUCT
+  SERVICE
+  LISTING
+}
+
+enum DealStatus {
+  DRAFT
+  OPEN
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum OrderStatus {
+  PLACED
+  CONFIRMED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  COD
+  UPI_ON_DELIVERY
+}
+
+enum ListingType {
+  SELL
+  FREE
+  RENT
+}
+
+enum ListingVisibility {
+  SOCIETY
+  NEARBY
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  EXPIRED
+  REMOVED
+}
+
+enum ServiceRequestStatus {
+  OPEN
+  MATCHED
+  CLOSED
+}
+
+enum AdKind {
+  VENDOR_STRIP
+  DEAL_CARD
+  PROVIDER_FEATURE
+  ORDER_BANNER
+}
+
+enum AdActionType {
+  URL
+  CALL
+  WHATSAPP
+  DEAL
+}
+
+enum AdStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWED
+  DISMISSED
+  ACTIONED
+}
+
+enum NoticeCategory {
+  MAINTENANCE
+  WATER
+  MEETING
+  FESTIVAL
+  EMERGENCY
+  GENERAL
+}
+
+model Society {
+  id                   String             @id @default(uuid()) @db.Uuid
+  name                 String
+  slug                 String             @unique
+  area                 String
+  city                 String
+  pincode              String
+  lat                  Decimal?           @db.Decimal(9, 6)
+  lng                  Decimal?           @db.Decimal(9, 6)
+  code                 String             @unique @db.VarChar(6)
+  isActive             Boolean            @default(true) @map("is_active")
+  subscriptionStatus   SubscriptionStatus @default(NONE) @map("subscription_status")
+  subscriptionPriceInr Int                @default(100) @map("subscription_price_inr")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+
+  buildings       Building[]
+  users           User[]
+  deals           DealSociety[]
+  orders          Order[]
+  notices         Notice[]
+  listings        Listing[]
+  events          Event[]
+  polls           Poll[]
+  lostFound       LostFoundItem[]
+  suggestions     Suggestion[]
+  serviceRequests ServiceRequest[]
+  recommendations ProviderRecommendation[]
+
+  @@index([area, city])
+  @@index([isActive])
+  @@map("societies")
+}
+
+model Building {
+  id        String   @id @default(uuid()) @db.Uuid
+  societyId String   @map("society_id") @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  society Society @relation(fields: [societyId], references: [id])
+  users   User[]
+
+  @@index([societyId])
+  @@map("buildings")
+}
+
+model User {
+  id               String           @id @default(uuid()) @db.Uuid
+  phone            String           @unique
+  name             String?
+  photoUrl         String?          @map("photo_url")
+  language         Language         @default(MR)
+  role             Role             @default(RESIDENT)
+  societyId        String?          @map("society_id") @db.Uuid
+  buildingId       String?          @map("building_id") @db.Uuid
+  flatNumber       String?          @map("flat_number")
+  membershipStatus MembershipStatus @default(PENDING) @map("membership_status")
+  fcmToken         String?          @map("fcm_token")
+  lastSeenAt       DateTime?        @map("last_seen_at")
+  deletedAt        DateTime?        @map("deleted_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  society  Society?  @relation(fields: [societyId], references: [id])
+  building Building? @relation(fields: [buildingId], references: [id])
+
+  consents         UserConsent[]
+  refreshTokens    RefreshToken[]
+  orders           Order[]
+  standingRequests StandingRequest[]
+  listings         Listing[]
+  notices          Notice[]
+  reports          Report[]
+  blocksMade       Block[]                   @relation("blocker")
+  blocksReceived   Block[]                   @relation("blocked")
+  recommendations  ProviderRecommendation[]
+  serviceRequests  ServiceRequest[]
+  serviceJoins     ServiceRequestJoiner[]
+  eventRsvps       EventRsvp[]
+  pollVotes        PollVote[]
+  suggestions      Suggestion[]
+  notifications    AppNotification[]
+  analytics        AnalyticsEvent[]
+
+  @@index([societyId, membershipStatus])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model UserConsent {
+  id        String      @id @default(uuid()) @db.Uuid
+  userId    String      @map("user_id") @db.Uuid
+  type      ConsentType
+  version   String
+  granted   Boolean
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@map("user_consents")
+}
+
+model OtpRequest {
+  id        String   @id @default(uuid()) @db.Uuid
+  phone     String
+  codeHash  String   @map("code_hash")
+  expiresAt DateTime @map("expires_at")
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([phone, createdAt])
+  @@map("otp_requests")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Vendor {
+  id         String    @id @default(uuid()) @db.Uuid
+  name       String
+  phone      String
+  whatsapp   String?
+  address    String
+  area       String
+  isVerified Boolean   @default(false) @map("is_verified")
+  logoUrl    String?   @map("logo_url")
+  status     String    @default("ACTIVE")
+  deletedAt  DateTime? @map("deleted_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  products  Product[]
+  deals     Deal[]
+  providers ServiceProvider[]
+
+  @@map("vendors")
+}
+
+model Category {
+  id             String       @id @default(uuid()) @db.Uuid
+  parentId       String?      @map("parent_id") @db.Uuid
+  kind           CategoryKind
+  nameI18n       Json         @map("name_i18n")
+  imageUrl       String       @map("image_url")
+  searchKeywords String[]     @map("search_keywords")
+  sortOrder      Int          @default(0) @map("sort_order")
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  parent          Category?        @relation("CategoryTree", fields: [parentId], references: [id])
+  children        Category[]       @relation("CategoryTree")
+  products        Product[]
+  listings        Listing[]
+  providers       ServiceProvider[]
+  serviceRequests ServiceRequest[]
+
+  @@index([kind, isActive, sortOrder])
+  @@map("categories")
+}
+
+model Product {
+  id             String   @id @default(uuid()) @db.Uuid
+  vendorId       String   @map("vendor_id") @db.Uuid
+  categoryId     String   @map("category_id") @db.Uuid
+  nameI18n       Json     @map("name_i18n")
+  imageUrl       String   @map("image_url")
+  unitI18n       Json     @map("unit_i18n")
+  mrpPaise       Int      @map("mrp_paise")
+  searchKeywords String[] @map("search_keywords")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  vendor     Vendor      @relation(fields: [vendorId], references: [id])
+  category   Category    @relation(fields: [categoryId], references: [id])
+  deals      Deal[]
+  orderItems OrderItem[]
+
+  @@index([categoryId, isActive])
+  @@index([vendorId])
+  @@map("products")
+}
+
+model Deal {
+  id              String     @id @default(uuid()) @db.Uuid
+  productId       String     @map("product_id") @db.Uuid
+  vendorId        String     @map("vendor_id") @db.Uuid
+  titleI18n       Json       @map("title_i18n")
+  bannerUrl       String?    @map("banner_url")
+  minParticipants Int        @map("min_participants")
+  maxQuantity     Int        @default(10) @map("max_quantity")
+  cutoffAt        DateTime   @map("cutoff_at")
+  deliveryDate    DateTime   @map("delivery_date") @db.Date
+  deliverySlot    String     @map("delivery_slot")
+  status          DealStatus @default(DRAFT)
+  createdBy       String?    @map("created_by") @db.Uuid
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  product    Product       @relation(fields: [productId], references: [id])
+  vendor     Vendor        @relation(fields: [vendorId], references: [id])
+  tiers      DealTier[]
+  societies  DealSociety[]
+  orderItems OrderItem[]
+
+  @@index([status, cutoffAt])
+  @@map("deals")
+}
+
+model DealTier {
+  id              String @id @default(uuid()) @db.Uuid
+  dealId          String @map("deal_id") @db.Uuid
+  minParticipants Int    @map("min_participants")
+  pricePaise      Int    @map("price_paise")
+
+  deal Deal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@unique([dealId, minParticipants])
+  @@map("deal_tiers")
+}
+
+model DealSociety {
+  dealId    String @map("deal_id") @db.Uuid
+  societyId String @map("society_id") @db.Uuid
+
+  deal    Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  society Society @relation(fields: [societyId], references: [id])
+
+  @@id([dealId, societyId])
+  @@map("deal_societies")
+}
+
+model Order {
+  id              String        @id @default(uuid()) @db.Uuid
+  userId          String        @map("user_id") @db.Uuid
+  societyId       String        @map("society_id") @db.Uuid
+  status          OrderStatus   @default(PLACED)
+  paymentMethod   PaymentMethod @map("payment_method")
+  deliverySlot    String        @map("delivery_slot")
+  addressSnapshot Json          @map("address_snapshot")
+  totalPaise      Int           @map("total_paise")
+  finalTotalPaise Int?          @map("final_total_paise")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  user    User        @relation(fields: [userId], references: [id])
+  society Society     @relation(fields: [societyId], references: [id])
+  items   OrderItem[]
+
+  @@index([userId, createdAt])
+  @@index([societyId, status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id               String @id @default(uuid()) @db.Uuid
+  orderId          String @map("order_id") @db.Uuid
+  dealId           String @map("deal_id") @db.Uuid
+  productId        String @map("product_id") @db.Uuid
+  quantity         Int
+  joinedPricePaise Int    @map("joined_price_paise")
+  finalPricePaise  Int?   @map("final_price_paise")
+  mrpPaise         Int    @map("mrp_paise")
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  deal    Deal    @relation(fields: [dealId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([dealId])
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model StandingRequest {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  quantity  Int      @default(1)
+  paused    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, productId])
+  @@map("standing_requests")
+}
+
+model ServiceProvider {
+  id           String    @id @default(uuid()) @db.Uuid
+  vendorId     String?   @map("vendor_id") @db.Uuid
+  categoryId   String    @map("category_id") @db.Uuid
+  name         String
+  phone        String
+  whatsapp     String?
+  photoUrl     String?   @map("photo_url")
+  areasServed  String[]  @map("areas_served")
+  isVerified   Boolean   @default(false) @map("is_verified")
+  isSponsored  Boolean   @default(false) @map("is_sponsored")
+  sponsorUntil DateTime? @map("sponsor_until")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  vendor          Vendor?                  @relation(fields: [vendorId], references: [id])
+  category        Category                 @relation(fields: [categoryId], references: [id])
+  recommendations ProviderRecommendation[]
+
+  @@index([categoryId])
+  @@map("service_providers")
+}
+
+model ProviderRecommendation {
+  id         String   @id @default(uuid()) @db.Uuid
+  providerId String   @map("provider_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  societyId  String   @map("society_id") @db.Uuid
+  usedIt     Boolean  @map("used_it")
+  rating     Int?
+  comment    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  provider ServiceProvider @relation(fields: [providerId], references: [id])
+  user     User            @relation(fields: [userId], references: [id])
+  society  Society         @relation(fields: [societyId], references: [id])
+
+  @@unique([providerId, userId])
+  @@map("provider_recommendations")
+}
+
+model ServiceRequest {
+  id            String               @id @default(uuid()) @db.Uuid
+  societyId     String               @map("society_id") @db.Uuid
+  requesterId   String               @map("requester_id") @db.Uuid
+  serviceTypeId String               @map("service_type_id") @db.Uuid
+  preferredDate DateTime             @map("preferred_date") @db.Date
+  preferredSlot String               @map("preferred_slot")
+  note          String?
+  photoUrl      String?              @map("photo_url")
+  voiceUrl      String?              @map("voice_url")
+  status        ServiceRequestStatus @default(OPEN)
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+
+  society     Society                @relation(fields: [societyId], references: [id])
+  requester   User                   @relation(fields: [requesterId], references: [id])
+  serviceType Category               @relation(fields: [serviceTypeId], references: [id])
+  joiners     ServiceRequestJoiner[]
+
+  @@index([societyId, status])
+  @@map("service_requests")
+}
+
+model ServiceRequestJoiner {
+  requestId String @map("request_id") @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+
+  request ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id])
+
+  @@id([requestId, userId])
+  @@map("service_request_joiners")
+}
+
+model Listing {
+  id                     String            @id @default(uuid()) @db.Uuid
+  societyId              String            @map("society_id") @db.Uuid
+  sellerId               String            @map("seller_id") @db.Uuid
+  categoryId             String            @map("category_id") @db.Uuid
+  type                   ListingType
+  title                  String
+  description            String?
+  pricePaise             Int               @map("price_paise")
+  photos                 String[]
+  contactWhatsappAllowed Boolean           @default(false) @map("contact_whatsapp_allowed")
+  contactCallAllowed     Boolean           @default(false) @map("contact_call_allowed")
+  visibility             ListingVisibility @default(SOCIETY)
+  status                 ListingStatus     @default(ACTIVE)
+  expiresAt              DateTime          @map("expires_at")
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @updatedAt @map("updated_at")
+
+  society  Society  @relation(fields: [societyId], references: [id])
+  seller   User     @relation(fields: [sellerId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+
+  @@index([societyId, status])
+  @@map("listings")
+}
+
+model Notice {
+  id          String         @id @default(uuid()) @db.Uuid
+  societyId   String         @map("society_id") @db.Uuid
+  authorId    String         @map("author_id") @db.Uuid
+  title       String
+  body        String
+  imageUrl    String?        @map("image_url")
+  category    NoticeCategory @default(GENERAL)
+  isPinned    Boolean        @default(false) @map("is_pinned")
+  isEmergency Boolean        @default(false) @map("is_emergency")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  society Society @relation(fields: [societyId], references: [id])
+  author  User    @relation(fields: [authorId], references: [id])
+
+  @@index([societyId, isPinned, createdAt])
+  @@map("notices")
+}
+
+model Event {
+  id        String   @id @default(uuid()) @db.Uuid
+  societyId String   @map("society_id") @db.Uuid
+  title     String
+  eventDate DateTime @map("event_date")
+  place     String
+  imageUrl  String?  @map("image_url")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  society Society     @relation(fields: [societyId], references: [id])
+  rsvps   EventRsvp[]
+
+  @@map("events")
+}
+
+model EventRsvp {
+  eventId String @map("event_id") @db.Uuid
+  userId  String @map("user_id") @db.Uuid
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@id([eventId, userId])
+  @@map("event_rsvps")
+}
+
+model Poll {
+  id        String   @id @default(uuid()) @db.Uuid
+  societyId String   @map("society_id") @db.Uuid
+  question  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  society Society      @relation(fields: [societyId], references: [id])
+  options PollOption[]
+  votes   PollVote[]
+
+  @@map("polls")
+}
+
+model PollOption {
+  id     String @id @default(uuid()) @db.Uuid
+  pollId String @map("poll_id") @db.Uuid
+  label  String
+
+  poll  Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes PollVote[]
+
+  @@map("poll_options")
+}
+
+model PollVote {
+  id       String @id @default(uuid()) @db.Uuid
+  pollId   String @map("poll_id") @db.Uuid
+  optionId String @map("option_id") @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+
+  poll   Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  option PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  user   User       @relation(fields: [userId], references: [id])
+
+  @@unique([pollId, userId])
+  @@map("poll_votes")
+}
+
+model LostFoundItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  societyId   String   @map("society_id") @db.Uuid
+  type        String
+  description String
+  photoUrl    String?  @map("photo_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  society Society @relation(fields: [societyId], references: [id])
+
+  @@map("lost_found_items")
+}
+
+model Suggestion {
+  id        String   @id @default(uuid()) @db.Uuid
+  societyId String   @map("society_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  society Society @relation(fields: [societyId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@map("suggestions")
+}
+
+model Ad {
+  id                 String       @id @default(uuid()) @db.Uuid
+  advertiserName     String       @map("advertiser_name")
+  kind               AdKind
+  titleI18n          Json         @map("title_i18n")
+  imageUrl           String       @map("image_url")
+  actionType         AdActionType @map("action_type")
+  actionValue        String       @map("action_value")
+  startAt            DateTime     @map("start_at")
+  endAt              DateTime     @map("end_at")
+  dailyImpressionCap Int          @map("daily_impression_cap")
+  targetSocietyIds   String[]     @map("target_society_ids") @db.Uuid
+  status             AdStatus     @default(DRAFT)
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  stats AdStatDaily[]
+
+  @@index([status, kind])
+  @@map("ads")
+}
+
+model AdStatDaily {
+  adId        String   @map("ad_id") @db.Uuid
+  date        DateTime @db.Date
+  impressions Int      @default(0)
+  taps        Int      @default(0)
+
+  ad Ad @relation(fields: [adId], references: [id], onDelete: Cascade)
+
+  @@id([adId, date])
+  @@map("ad_stats_daily")
+}
+
+model Report {
+  id         String       @id @default(uuid()) @db.Uuid
+  reporterId String       @map("reporter_id") @db.Uuid
+  targetType String       @map("target_type")
+  targetId   String       @map("target_id") @db.Uuid
+  reason     String
+  status     ReportStatus @default(OPEN)
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  reporter User @relation(fields: [reporterId], references: [id])
+
+  @@index([status])
+  @@map("reports")
+}
+
+model Block {
+  blockerId String   @map("blocker_id") @db.Uuid
+  blockedId String   @map("blocked_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  blocker User @relation("blocker", fields: [blockerId], references: [id])
+  blocked User @relation("blocked", fields: [blockedId], references: [id])
+
+  @@id([blockerId, blockedId])
+  @@map("blocks")
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  societyId String?  @map("society_id") @db.Uuid
+  name      String
+  props     Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([name, createdAt])
+  @@map("analytics_events")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id") @db.Uuid
+  meta       Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model AppNotification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  type      String
+  titleI18n Json      @map("title_i18n")
+  bodyI18n  Json      @map("body_i18n")
+  data      Json?
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("app_notifications")
+}
